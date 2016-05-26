@@ -1,3 +1,5 @@
+This is a fork of the raspberry-remote project.  I have made some tweaks to make this better suited for our needs.  Proper documentation is on the way.  For now just clone this repository and check that the scripts.xml is correct and that the scripts it is pointing to are correct.
+
 # raspberry-remote
 
 **Screenshots**<br />
