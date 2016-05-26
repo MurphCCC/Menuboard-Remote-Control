@@ -1,0 +1,140 @@
+#!/bin/bash
+
+file=$1;
+
+cfg.parser () {
+
+	fixed_file=$(cat $1 | sed 's/ = /=/g')   
+	IFS=$'\n' && ini=( $fixed_file )         
+	ini=( ${ini[*]//;*/} )                   
+	ini=( ${ini[*]/#[/\}$'\n'cfg.section.} ) 
+	ini=( ${ini[*]/%]/ \(} )                 
+		ini=( ${ini[*]/=/=\( } )                 
+			ini=( ${ini[*]/%/ \)} )                  
+		ini=( ${ini[*]/%\( \)/\(\) \{} )         
+		ini=( ${ini[*]/%\} \)/\}} )              
+	ini[0]=''                                
+	ini[${#ini[*]} + 1]='}'                  
+	eval "$(echo "${ini[*]}")"               
+}
+
+cfg.parser 'remote.cfg'
+cfg.section.omxplayer
+
+if [ "$seek" == "1" ]; then
+		file="$media"
+fi
+
+if [ -z "$font" ]; then
+	font="";
+else
+	font="--font ./""$font";
+fi
+
+if [ "$passthrough" == "enabled" ]; then
+	passthrough="-p";
+else
+	passthrough="";
+fi
+
+if [ "$source_res" == "enabled" ]; then
+	source_res="-r";
+else
+	source_res="";
+fi
+if [ "$audio_lay" == "none" ]; then
+	audio_lay="";
+fi
+if [ "$audio_lay" == "51" ]; then
+	audio_lay="--layout 5.1";
+fi
+if [ "$audio_lay" == "21" ]; then
+	audio_lay="--layout 2.1";
+fi
+
+seekto="--pos ""$pos";
+
+if [ "$subtitles" == "internet" ] && [ -f "$file" ]; then
+
+	filename="$(pwd)"/subs/$(basename "$file" | sed 's/\.[^.]*$//').srt;
+	if [ -f "$filename" ]; then
+		sub="--subtitles ""$filename"
+	fi
+fi
+
+if [ "$source_res" == "-r" ]  && [ "$compatible" == "no" ]; then
+
+	if [ "$seek" != "1" ]; then
+		rm res
+		eval stdbuf -o0 omxplayer -i "\"$file\"" 2>&1 | tee info size
+		#cp info size
+		info='size'
+	else
+		info='res'
+	fi
+
+	while [[ $RES != *[!\ ]* ]]; do	
+
+		RES=$(cat ""$info"" | grep Stream | grep Video | awk '{for (i=NF; i>=0; --i){ if ($i ~/x/) {print $i; exit}}}' | cut -d',' -f1);
+
+		IFS='x' read res_x res_y <<<"$RES"
+
+		#res_x=$("$mediainfo" -f "$file" | grep "Width" | grep -o '[0-9]\+' | head -n 1);
+
+		if [[ 1280 -gt $res_x ]]; then
+			profile="--win $tv_sd";
+		else
+			#if [ $res_x = 0 ]; then
+			#	profile=$tv_hdr;
+			#else
+			profile="--win $tv_hd";
+			#fi
+		fi
+
+		echo $RES > res
+		
+		info='size'
+
+		let i++ 1
+		
+		if [[ $i -gt 20 ]]; then
+			break
+		fi
+
+		sleep 0.3
+		
+	done
+
+	
+	#else
+		#profile=""
+	#fi
+	#info=true;
+else
+	profile=""
+fi
+
+if [ -z "$source_res" ]; then
+	
+	res_x=$(fbset --show | grep geometry | awk '{print $2}')
+	res_y=$(fbset --show | grep geometry | awk '{print $3}')
+
+	profile="--win 0,0,$res_x,$res_y";
+fi
+
+cmd="-o $audio_out $passthrough -b $seekto $source_res $audio_lay --align $align_sub $sub --no-ghost-box --font-size $font_size $font --stats --live $profile"
+
+cmd=$(echo $cmd | tr -s " ")
+cmd=${cmd%% }
+cmd=${cmd## }
+
+rm out.log
+
+eval stdbuf -o0 omxplayer $cmd "\"$file\"" <fifo >>out.log 2>&1 &
+
+if [ "$seek" != "1" ] && ([ "$source_res" != "-r" ]  || [ "$compatible" != "no" ]); then
+
+	eval stdbuf -o0 omxplayer -i "\"$file\"" >info 2>&1
+fi
+
+echo -n . >fifo

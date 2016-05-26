@@ -1,0 +1,17 @@
+#!/bin/bash
+
+DISPLAY="${DISPLAY:-:0}" kodi
+tvservice -p
+sleep 1
+
+os=$(lsb_release -si)
+
+if [ ! "$os" = "Ubuntu" ]; then
+        fbset -depth 8 && fbset -depth 16
+else
+        sudo chvt 8; sudo chvt 7
+fi
+
+DISPLAY=:0 xset s noblank
+DISPLAY="${DISPLAY:-:0}" xrefresh
+

@@ -1,0 +1,107 @@
+#!/bin/bash -e
+
+hdmi=1
+
+doc_root=$(grep -i 'DocumentRoot' /etc/apache2/sites-available/000-default.conf |  awk '{print $2}' | xargs)
+
+# Script to enable and disable the HDMI signal of the Raspberry PI
+# Inspiration: http://www.raspberrypi.org/forums/viewtopic.php?t=16472&p=176258
+
+function on {
+	if tvservice -s | grep 'off'; then
+		tvservice --preferred
+		sleep 1; screenref
+	fi
+}
+
+function off {
+	if ! tvservice -s | grep 'off'; then
+		tvservice --off
+	fi
+}
+
+function screenref {
+
+	os=$(lsb_release -si)
+
+	if [ ! "$os" = "Ubuntu" ]; then
+		fbset -depth 8 && fbset -depth 16
+	else
+		sudo chvt 8; sudo chvt 7
+	fi
+
+	DISPLAY="${DISPLAY:-:0}" xrefresh
+}
+
+function vlc_watch {
+
+	pbs=""
+	if [ "$(pgrep vlc)" != "" ]; then
+
+		pbs=$(bash -c 'DISPLAY=:0 gdbus call --session --dest org.mpris.MediaPlayer2.vlc --object-path /org/mpris/MediaPlayer2 --method org.freedesktop.DBus.Properties.Get "org.mpris.MediaPlayer2.Player" "PlaybackStatus"')
+	fi
+}
+
+function mpd_watch {
+
+	for pmp in $(mpc --format ""); do
+		if [ $pmp = "[playing]" ]; then
+			break
+		fi
+	done
+
+}
+
+process() {
+
+	while read input; do
+		case "$input" in
+
+			UNBLANK*)	
+
+if [ $hdmi = "0" ]; then
+
+	on
+	hdmi=1
+	sleep 1
+fi;;
+
+BLANK*)	
+
+mpd_watch; vlc_watch;
+while [ $pmp = "[playing]" ] || [ "$pbs" = "(<'Playing'>,)" ]; do
+	mpd_watch
+	vlc_watch
+	sleep 10
+done
+sleep 10
+if [ $hdmi = "1" ]; then
+
+
+	off
+	hdmi=0
+	sleep 1
+fi;;
+esac
+done
+
+}
+
+DISPLAY="${DISPLAY:-:0}" xset s off
+while [ "$(pgrep lightdm)" ]
+do
+	while [ ! "$(pgrep omxplayer.bin)" ] && [ ! "$(pgrep retroarch)" ] && [ ! "$(pgrep kodi)" ]; do
+		if [ "$(pgrep xscreensaver)" ]; then
+			DISPLAY="${DISPLAY:-:0}" xscreensaver-command -watch | process
+			sleep 1
+		else
+			DISPLAY="${DISPLAY:-:0}" xscreensaver -no-splash &
+			sleep 1
+		fi
+	done
+	sleep 120
+
+done
+
+#eval $doc_root"/raspberry-remote/monitor on"
+#eval $doc_root"/raspberry-remote/monitor off"
